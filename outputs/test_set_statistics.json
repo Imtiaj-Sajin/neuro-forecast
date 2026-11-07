@@ -1,0 +1,23 @@
+{
+  "items": 200,
+  "items_per_section": {
+    "Behavioral/Cognitive": 75,
+    "Systems/Circuits": 51,
+    "Neurobiology of Disease": 25,
+    "Development/Plasticity/Repair": 24,
+    "Cellular/Molecular": 25
+  },
+  "changed_sentences_per_item": {
+    "1": 45,
+    "2": 77,
+    "3": 41,
+    "4": 24,
+    "5": 8,
+    "6": 5
+  },
+  "result_span_words": {
+    "mean": 64.6,
+    "min": 13,
+    "max": 163
+  }
+}

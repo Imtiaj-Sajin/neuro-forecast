@@ -1,0 +1,18 @@
+# downloaded and generated data (rebuilt by prepare_data.py)
+data/raw/*.csv
+data/processed/*.jsonl
+data/processed/*.json
+# external repositories and model weights
+brainbench_experiments/
+models/
+*.safetensors
+*.bin
+# environment and secrets
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# LaTeX build files
+*.aux
+*.log
+*.out

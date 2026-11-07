@@ -1,0 +1,5 @@
+model,possibly_contaminated,items,accuracy_percent,errors
+Llama-2-7B,False,200,81.5,37
+Galactica-6.7B,False,200,83.0,34
+Mistral-7B-v0.1,True,200,83.0,34
+BrainGPT (Mistral-7B-v0.1 with LoRA),True,200,86.0,28

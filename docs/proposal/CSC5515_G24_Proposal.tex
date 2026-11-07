@@ -1,0 +1,201 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+\urlstyle{same}
+\usepackage{microtype}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+\renewcommand{\ttdefault}{lmtt}
+
+\titleformat{\section}{\normalsize\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{7pt}{3pt}
+\titleformat{\subsection}[runin]{\normalsize\bfseries}{}{0pt}{}[.]
+\titlespacing*{\subsection}{0pt}{3pt}{0.5em}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlist{nosep,leftmargin=1.4em,topsep=1pt}
+\pagestyle{plain}
+
+\hypersetup{pdftitle={Time-Restricted Evidence Retrieval for Predicting Neuroscience Experimental Results with LLMs},
+            pdfauthor={Md. Imtiaj Alam Sajin}}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries Time-Restricted Evidence Retrieval for Predicting\\ Neuroscience Experimental Results with LLMs}\\[5pt]
+Md. Imtiaj Alam Sajin (26-94090-2)\\[1pt]
+CSC5515 Natural Language Processing, Final Proposal\\[1pt]
+Group G24 \quad Project type C (retrieval-augmented generation)\\[1pt]
+American International University-Bangladesh, Fall 2026--27
+\end{center}
+
+\section{Changes Since the Initial Proposal}
+Table~\ref{tab:feedback} lists each feedback point and how it is addressed. Besides these points, the retrieval corpus is now built directly from PubMed, because the abstract file used in the initial proposal has no identifiers or dates (Section~\ref{sec:data}).
+
+\begin{table}[h]
+\centering\small
+\caption{Feedback on the initial proposal and the corresponding changes.}
+\label{tab:feedback}
+\begin{tabular}{p{0.3cm}p{4.6cm}p{10.8cm}}
+\toprule
+& Feedback & Change \\
+\midrule
+1 & Leakage test: the pre-2023 corpus makes the filter-off condition meaningless. &
+The corpus now covers \emph{Journal of Neuroscience} abstracts from 2010 to 2024 and includes the 200 test articles themselves. RQ3 compares three conditions: time-restricted, all documents except the test article, and all documents. I also report how often the test article is retrieved (Sections~\ref{sec:data} and \ref{sec:eval}). \\
+2 & Measure retrieval quality directly. &
+Each test DOI is mapped to its PubMed ID, and its cited references are obtained with the NCBI ELink service. References present in the corpus are the relevant documents. I report Recall@$k$ and MRR, and relate them to per-item accuracy gains. For items with no cited reference in the corpus, top-5 relevance is judged by hand for 50 queries (Section~\ref{sec:eval}). \\
+3 & Score only the result tokens, conditioned on context and background. &
+The score is now the mean log-likelihood of the result-sentence tokens only, conditioned on the retrieved abstracts and the shared background text. Scoring only the differing tokens, and the original full-abstract scoring, are run as ablations (Section~\ref{sec:method}). \\
+4 & Mistral-7B-v0.1 may have seen the 2023 abstracts. &
+The second model is now Galactica-6.7B, released in November 2022. Mistral-7B-v0.1, and BrainGPT, which is built on it, are kept only as comparisons and are labelled as possibly contaminated in all tables (Section~\ref{sec:method}). \\
+5 & State the corpus source, the test-case licence and the run design. &
+The old corpus file and its script are named in Section~\ref{sec:data}, together with the new PubMed corpus. The human-written test cases are released under Apache-2.0. The three query variants are the three runs for the variance estimate (Section~\ref{sec:eval}). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Problem, Motivation and Research Questions}
+Scientists often predict the result of a study from what earlier studies found. Luo et al.~[1] showed that large language models (LLMs) can do this well. In their benchmark, BrainBench, a model sees two versions of a \emph{Journal of Neuroscience} abstract that are identical except for the results, and it must pick the published one. LLMs were more accurate than human experts. However, the models decide only from what they learned during training. Their choice is not linked to any evidence, and they cannot use studies they rarely saw. The authors suggested retrieval as a next step but did not test it. In this project I add retrieval of prior literature to the task. The retriever may only return papers published before the test article, so the model must predict from earlier evidence and cannot simply find the answer.
+\begin{itemize}
+\item[RQ1.] Does conditioning on time-restricted prior abstracts improve accuracy compared with scoring without retrieval?
+\item[RQ2.] How does the effect depend on the retriever, the number of retrieved abstracts and the retrieval quality?
+\item[RQ3.] How much would accuracy be inflated if the time restriction were removed, and how much of this comes from retrieving the test article itself?
+\end{itemize}
+\textbf{Hypothesis.} Time-restricted retrieval improves accuracy and calibration, and the gain is larger for items where retrieval finds papers that the test article cites.
+
+\section{Related Work}
+Luo et al.~[1] introduced BrainBench and BrainGPT, Mistral-7B-v0.1 tuned with LoRA on neuroscience literature from 2002--2022. Both decide by perplexity over the whole abstract without external evidence; I add dated evidence at test time and score only the result tokens. Luo et al.~[2] trained small GPT-2 models from scratch on neuroscience text and reached expert-level accuracy, again without retrieval. Lewis et al.~[3] introduced retrieval-augmented generation for question answering, where retrieval needs no time limit; in this task retrieval must exclude the future. OpenScholar~[4] retrieves scientific papers to answer literature questions, but it synthesises existing findings rather than predicting a new result. Halawi et al.~[5] forecast real-world events using news retrieved before a cutoff date; here the target is scientific results, and the decision compares likelihoods rather than generating a forecast. BackTrend~[6] uses date-filtered retrieval to predict research trends in AI and machine learning, a different domain and task without item-level verification. Shi et al.~[7] detect whether a text was in a model's pretraining data; I address the same contamination problem by choosing models with pre-2023 training data and by measuring leakage through retrieval.
+
+\section{Data}\label{sec:data}
+\subsection{Test set}
+The 200 human-written BrainBench test cases (\texttt{BrainBench\_Human\_v0.1.csv}, Hugging Face dataset \texttt{BrainGPT}, licence Apache-2.0). Each row has a DOI, a journal section, the original abstract and the altered abstract. The articles were published in 2023. The items cover Behavioral/Cognitive (75), Systems/Circuits (51), Neurobiology of Disease (25), Development/Plasticity/Repair (24) and Cellular/Molecular (25). The cleaning script splits each abstract into sentences and marks the sentences that differ between the two versions as the result span. Each item changes one to six sentences (45, 77, 41, 24, 8 and 5 items), and the result span has 65 words on average (range 13--163). The two versions are presented in random order, so the binary labels are balanced.
+
+\subsection{Development set}
+The 100 BrainBench items written by GPT-4 and checked by experts (\texttt{BrainBench\_GPT-4\_v0.1.csv}, same columns). No licence is stated on its dataset card, so it is used only for tuning and is not redistributed. All settings, such as $k$, are chosen on this set, and the test set is used only for the final results.
+
+\subsection{Retrieval corpus}
+The initial proposal used \texttt{data/j\_of\_neuro\_abstracts\_2017\_2022.json} (3,451 abstracts) from the BrainBench experiment repository~[8], produced by \texttt{compile\_j\_of\_neuro.py} from the training split of the Hugging Face dataset \texttt{BrainGPT/train\_valid\_split\_pmc\_neuroscience\_2002-2022\_filtered\_subset}. This file contains only abstract text, without PubMed IDs or dates, so it cannot support time filtering or citation-based relevance. The new corpus is downloaded from PubMed with NCBI E-utilities: all \emph{Journal of Neuroscience} records with an abstract published from 2010 to 2024, stored with PubMed ID, DOI, publication date, title and abstract. It therefore contains the 200 test articles and later papers, which makes the filter-off conditions able to leak results. PubMed abstracts are used only for retrieval and are not redistributed; the code downloads them instead. Corpus size and the number of test items with at least one cited reference in the corpus will be reported after download.
+
+\subsection{Relevance labels and cleaning script}
+For each test article, the DOI is mapped to a PubMed ID, and the PubMed IDs of its cited references are downloaded through ELink (\texttt{pubmed\_pubmed\_refs}). The script \texttt{prepare\_data.py}, posted in the G24 Teams channel, performs the test-case cleaning, corpus download and reference download. Table~\ref{tab:samples} shows five test items.
+
+\begin{table}[h]
+\centering\small
+\caption{Five sample test items. Changed words are shown as original $\rightarrow$ altered.}
+\label{tab:samples}
+\begin{tabular}{lllp{6.3cm}}
+\toprule
+Item & Section & Changed sentences & Main change in the altered version\\
+\midrule
+BC-0   & Behavioral/Cognitive          & 4 & anterior $\rightarrow$ posterior (location of cortical patches)\\
+SC-10  & Systems/Circuits              & 3 & reduces $\rightarrow$ increases\\
+ND-39  & Neurobiology of Disease       & 3 & short-term $\rightarrow$ long-term\\
+DP-24  & Development/Plasticity/Repair & 2 & phasic $\rightarrow$ tonic, and tonic $\rightarrow$ phasic\\
+CM-28  & Cellular/Molecular            & 3 & knocking down $\rightarrow$ overexpressing\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Method}\label{sec:method}
+\subsection{Models and access}
+All models run locally with Hugging Face Transformers on one GPU with 16\,GB of memory, using 4-bit quantisation where needed. The main model is Llama-2-7B~[9], whose pretraining data end in September 2022. The second model is Galactica-6.7B~[10], released in November 2022 and trained on scientific text. Mistral-7B-v0.1~[11], released in September 2023, and BrainGPT~[1], which adds a LoRA adapter to it, are reported separately as a domain-tuned comparison and marked as possibly contaminated.
+
+\subsection{Retrieval}
+The query is built from the sentences that are identical in both versions, so it does not reveal which version is correct. Retrieval uses BM25~[12] or the biomedical dense retriever MedCPT~[13]. In the time-restricted condition, only documents published before the month of the test article are allowed. Each retrieved abstract is truncated to 200 tokens, so that $k=5$ fits the 2,048-token context of Galactica.
+
+\subsection{Scoring}
+For a version $v$ with result tokens $R_v$ and context $C$ (the retrieved abstracts followed by the abstract text before each result sentence), the score is the mean log-likelihood of the result tokens:
+\[
+s(v) = \frac{1}{|R_v|}\sum_{t \in R_v} \log p\left(x_t \mid x_{<t},\, C\right).
+\]
+The version with the higher score, which is the lower perplexity over the result tokens, is chosen. The context tokens are not scored, so a long context cannot dominate the score. Confidence is $|s(\text{original}) - s(\text{altered})|$.
+
+\subsection{Baselines}
+\emph{Non-LLM baseline}: BM25 support, which chooses the version whose result sentences have the higher BM25 score against the retrieved abstracts. \emph{Zero-shot LLM baselines}: the same score $s(v)$ with no retrieved context, and the original BrainBench rule of perplexity over the whole abstract. A prompted variant, which asks the model which version is real, is also reported.
+
+\section{Evaluation}\label{sec:eval}
+\subsection{Prediction}
+Accuracy is the main metric, because the task is a balanced two-way choice and accuracy is also used for experts and models in~[1]. I report 95\% bootstrap confidence intervals over items and use McNemar tests for paired comparisons. Calibration is reported as accuracy per confidence quintile and as the AUROC of confidence for separating correct from wrong choices.
+
+\subsection{Runs and variance}
+Scoring with a fixed context is deterministic, so the three runs are three query variants: Q1, the sentences before the first result sentence; Q2, all sentences that are identical in both versions; and Q3, the 15 highest TF-IDF terms of Q2. Results are reported as mean $\pm$ standard deviation over the three variants, together with bootstrap intervals. The prompted baseline is run with three prompt wordings, and unparseable answers count as wrong.
+
+\subsection{Retrieval quality}
+Recall@$k$ and MRR are computed against the cited references in the corpus, for items with at least one such reference. To relate retrieval quality to accuracy, the per-item gain over the no-retrieval score is compared between items with and without a cited reference in the top $k$, and with a logistic regression of correctness on Recall@$k$. For 50 queries without cited references in the corpus, top-5 relevance is judged by hand on a three-point scale.
+
+\subsection{Leakage (RQ3)}
+Three conditions are compared: time-restricted, all documents except the test article, and all documents. I also report the rate at which the test article itself appears in the top $k$.
+
+\subsection{Ablations and error analysis}
+The ablations vary $k \in \{0, 1, 3, 5\}$, BM25 against MedCPT, the scoring span (result sentences, differing tokens only, whole abstract) and the model. For the error analysis, at least 50 errors of the main method are grouped by the type of change (direction, brain region, cell or molecule type, time scale, other) and by what the retriever returned (no relevant paper, supporting evidence, conflicting evidence).
+
+\section{Work Plan, Risks and Backup}
+This is an individual project, so I am responsible for every task.
+
+\begin{center}\small
+\begin{tabular}{lp{14.2cm}}
+\toprule
+Week & Task \\
+\midrule
+6      & Final proposal; test-case cleaning and statistics; PubMed corpus and cited-reference download \\
+7      & BM25 and MedCPT indexes with date filtering; zero-shot and BM25 baselines on the development set \\
+8      & Result-token scoring with retrieved context; choice of $k$ on the development set \\
+9--10  & Test runs for all models, query variants, leakage conditions and ablations; Recall@$k$, MRR and calibration \\
+11     & Hand-judged relevance for 50 queries; error analysis; code package with README, requirements and one script for the main table \\
+12     & Final report in the course \LaTeX{} template \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+\item \emph{Fewer than 50 errors.} The baseline accuracies in Section~\ref{sec:prelim} leave about 35 errors per model on the test set. The error analysis therefore pools the errors of the main method on the test and development sets for both models, and each source is reported separately.
+\item \emph{Few cited references in the corpus.} If many test articles cite few \emph{Journal of Neuroscience} papers, Recall@$k$ is reported only for items with relevant references, and the hand-judged queries cover the rest. The corpus can also be extended with abstracts of the cited references themselves, outside the journal.
+\item \emph{Missing PubMed IDs.} DOIs that do not map to a PubMed ID through E-utilities are looked up by title.
+\item \emph{Retrieval does not help.} A reranking step with MedCPT's cross-encoder is added before scoring. RQ3, the retrieval-quality analysis and the calibration results are reported in either case.
+\end{itemize}
+
+\section{Preliminary Baseline Results}\label{sec:prelim}
+Table~\ref{tab:prelim} gives the accuracy of the original zero-shot rule (lower perplexity over the whole abstract, no retrieval) on the 200 test items. I computed it from the perplexities released with the BrainBench code~[8]; my own runs of the baselines are planned for Week 7.
+
+\begin{table}[h]
+\centering\small
+\caption{Zero-shot accuracy on the test set, computed from the released perplexities of~[8]. $^{*}$Possibly contaminated.}
+\label{tab:prelim}
+\begin{tabular}{lcc}
+\toprule
+Model & Accuracy (\%) & Errors \\
+\midrule
+Llama-2-7B & 81.5 & 37 \\
+Galactica-6.7B & 83.0 & 34 \\
+Mistral-7B-v0.1$^{*}$ & 83.0 & 34 \\
+BrainGPT (Mistral-7B-v0.1 with LoRA)$^{*}$ & 86.0 & 28 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{References}
+\footnotesize
+\begin{enumerate}[label={[\arabic*]},leftmargin=2em]
+\item X. Luo et al. Large language models surpass human experts in predicting neuroscience results. \emph{Nature Human Behaviour}, 9(2):305--315, 2025.
+\item X. Luo et al. Matching domain experts by training from scratch on domain knowledge. arXiv:2405.09395, 2024.
+\item P. Lewis et al. Retrieval-augmented generation for knowledge-intensive NLP tasks. In \emph{NeurIPS}, 2020.
+\item A. Asai et al. OpenScholar: Synthesizing scientific literature with retrieval-augmented LMs. arXiv:2411.14199, 2024.
+\item D. Halawi et al. Approaching human-level forecasting with language models. In \emph{NeurIPS}, 2024.
+\item BackTrend: Evaluating scientific weak-signal prediction via backward reconstruction. arXiv:2609.24921, 2026.
+\item W. Shi et al. Detecting pretraining data from large language models. In \emph{ICLR}, 2024.
+\item BrainBench experiment code. \url{https://github.com/braingpt-lovelab/brainbench_experiments}
+\item H. Touvron et al. Llama 2: Open foundation and fine-tuned chat models. arXiv:2307.09288, 2023.
+\item R. Taylor et al. Galactica: A large language model for science. arXiv:2211.09085, 2022.
+\item A. Q. Jiang et al. Mistral 7B. arXiv:2310.06825, 2023.
+\item S. Robertson and H. Zaragoza. The probabilistic relevance framework: BM25 and beyond. \emph{Foundations and Trends in Information Retrieval}, 3(4):333--389, 2009.
+\item Q. Jin et al. MedCPT: Contrastive pre-trained transformers with large-scale PubMed search logs for zero-shot biomedical information retrieval. \emph{Bioinformatics}, 39(11):btad651, 2023.
+\end{enumerate}
+
+\end{document}
